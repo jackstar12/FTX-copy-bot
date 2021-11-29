@@ -2,6 +2,8 @@ import http.client
 import sys
 import json
 import logging
+import typing
+
 import requests
 from time import sleep
 from datetime import datetime
@@ -53,6 +55,28 @@ def ftx_place_order(api: FtxClient, data):
     )
 
 
+def try_place_order(api: FtxClient, data, n: typing.Optional[int] = 0):
+    if n > 3:
+        return
+    try:
+        response = ftx_place_order(
+            api=api,
+            data=data
+        )
+    except Exception as e:
+        if e is requests.exceptions.ConnectionError:
+            sleep(.05)
+            try_place_order(api, data, n + 1)
+        error = f'Order on market {data["market"]} ' \
+                f'{data["size"]}@{data["price"] if data["price"] is not None else "Market"} ' \
+                f'could not be created'
+        if len(e.args) > 0:
+            error += f' because of:'
+            for arg in e.args:
+                error += f' {arg}'
+        logger.error(error)
+
+
 def main():
     ws = {}
     api_leader = {}
@@ -90,36 +114,19 @@ def main():
             # Go through each follower of the found leader and place the order
             for follower in leader_follower_map[ws_leader]:
                 clientID = message_data['clientId']
-                current_conditional_order_map = orders_delivered[ws_leader][follower]
+
+                if clientID == "null" or clientID is None:
+                    clientID = f'{message_data["id"]}'
+                    message_data['clientId'] = clientID
+
                 if message_data['status'] == 'new' or message_data['type'] == 'market' or clientID not in orders_delivered[ws_leader][follower]:
                     orders_delivered[ws_leader][follower] = clientID
                     logger.info(f'New {message_data["type"]} order from {ws_leader} on market {message_data["market"]}')
-                    try:
-                        message_data['size'] = percentage(
-                            quantity=message_data['size'],
-                            percentage=leader_follower_map[leader][follower]
-                        )
-                        if message_data['clientId'] == "null":
-                            message_data['clientId'] = None
-                        response = ftx_place_order(
-                            api=api_follower[follower],
-                            data=message_data
-                        )
-                    except Exception as e:
-                        error = f'Order on market {message_data["market"]} ' \
-                                f'{message_data["size"]}@{message_data["price"] if message_data["price"] is not None else "Market"} ' \
-                                f'from {ws_leader} could not be created for follower {follower}'
-                        if len(e.args) > 0:
-                            error += f' because of:'
-                            for arg in e.args:
-                                error += f' {arg}'
-                        logger.error(error)
-                        continue
+                    try_place_order(api=api_follower[follower], data=message_data)
                 elif message_data['status'] == 'closed':
-                    if not message_data['filledSize'] > 0:
-                        api_follower[follower].cancel_order_by_client_id(
-                            client_id=clientID
-                        )
+                    api_follower[follower].cancel_order_by_client_id(
+                        client_id=clientID
+                    )
 
     # Initialise api endpoints for followers
     for follower in FOLLOWERS:
@@ -175,6 +182,8 @@ def main():
                             quantity=order_data['size'],
                             percentage=leader_follower_map[leader][follower]
                         )
+                        if order_data['clientId'] == "null" or order_data['clientId'] is None:
+                            order_data['clientId'] = order_data['id']
                         ftx_place_order(
                             api=api_follower[follower],
                             data=order_data

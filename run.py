@@ -124,9 +124,10 @@ def main():
                     logger.info(f'New {message_data["type"]} order from {ws_leader} on market {message_data["market"]}')
                     try_place_order(api=api_follower[follower], data=message_data)
                 elif message_data['status'] == 'closed':
-                    api_follower[follower].cancel_order_by_client_id(
-                        client_id=clientID
-                    )
+                    if not message_data['filledSize'] > 0:
+                        api_follower[follower].cancel_order_by_client_id(
+                            client_id=clientID
+                        )
 
     # Initialise api endpoints for followers
     for follower in FOLLOWERS:

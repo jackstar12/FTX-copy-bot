@@ -42,6 +42,6 @@ order streams will be logged if the debug flag is set.
 - It's recommended to only use Conditional Market orders, since the delay generated might interfere with conditional limit orders.
 
 # References
-- Original FTX Websocket and REST API implementations https://github.com/ftexchange/ftx, were modified
+- Original FTX Websocket and REST API implementations https://github.com/ftexchange/ftx were modified
 - Bot was inspired by https://github.com/destructiondogo/bitmex-copy-bot
 

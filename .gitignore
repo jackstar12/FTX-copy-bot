@@ -1,0 +1,6 @@
+ftx/websocket/__pycache__
+ftx/rest/__pycache__
+config.py
+.idea
+__pycache__
+venv

@@ -56,15 +56,13 @@ def ftx_place_order(api: FtxClient, data):
 
 
 def try_place_order(api: FtxClient, data, n: typing.Optional[int] = 0):
-    if n > 3:
-        return
     try:
         response = ftx_place_order(
             api=api,
             data=data
         )
     except Exception as e:
-        if e is requests.exceptions.ConnectionError:
+        if e is requests.exceptions.ConnectionError and n < 3:
             sleep(.05)
             try_place_order(api, data, n + 1)
             return

@@ -67,6 +67,7 @@ def try_place_order(api: FtxClient, data, n: typing.Optional[int] = 0):
         if e is requests.exceptions.ConnectionError:
             sleep(.05)
             try_place_order(api, data, n + 1)
+            return
         error = f'Order on market {data["market"]} ' \
                 f'{data["size"]}@{data["price"] if data["price"] is not None else "Market"} ' \
                 f'could not be created'

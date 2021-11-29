@@ -37,8 +37,9 @@ however the size will only be 70%. Subaccounts can also be specified, if require
 You might want to define the -d argument in order to get debug logs. Every http request will be logged and the incoming
 order streams will be logged if the debug flag is set. 
 
-# Note
-It's recommended to only use Conditional Market orders, since the delay generated might interfere with conditional limit orders.
+# Notes
+- The API access for the leaders can be read-only, but the followers can't since orders have to be placed
+- It's recommended to only use Conditional Market orders, since the delay generated might interfere with conditional limit orders.
 
 # References
 - Original FTX Websocket and REST API implementations https://github.com/ftexchange/ftx, were modified

@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Dict
 
 from config import LEADERS, FOLLOWERS
-
 from ftx.websocket.client import FtxWebsocketClient
 from ftx.rest.client import FtxClient
 
@@ -38,6 +37,20 @@ def get_timestamp_day(ftx_timestamp: str):
     ftx_timestamp = ftx_timestamp.split('T')[1]
     ftx_timestamp = ftx_timestamp[:ftx_timestamp.find('.')]
     return datetime.strptime(ftx_timestamp, "%H:%M:%S")
+
+
+def ftx_place_order(api: FtxClient, data):
+    return api.place_order(
+        market=data['market'],
+        side=data['side'],
+        price=data['price'],
+        type=data['type'],
+        size=data['size'],
+        reduce_only=data['reduceOnly'],
+        ioc=data['ioc'],
+        post_only=data['postOnly'],
+        client_id=data['clientId']
+    )
 
 
 def main():
@@ -81,24 +94,22 @@ def main():
                 if message_data['status'] == 'new' or message_data['type'] == 'market':
                     logger.info(f'New {message_data["type"]} order from {ws_leader} on market {message_data["market"]}')
                     try:
-                        response = api_follower[follower].place_order(
-                            market=message_data['market'],
-                            side=message_data['side'],
-                            price=message_data['price'],
-                            type=message_data['type'],
-                            size=percentage(
-                                quantity=message_data['size'],
-                                percentage=leader_follower_map[ws_leader][follower]
-                            ),
-                            reduce_only=message_data['reduceOnly'],
-                            ioc=message_data['ioc'],
-                            post_only=message_data['postOnly'],
-                            client_id=clientID
+                        message_data['size'] = percentage(
+                            quantity=message_data['size'],
+                            percentage=leader_follower_map[leader][follower]
+                        )
+                        if message_data['clientId'] == "null":
+                            message_data['clientId'] = None
+                        response = ftx_place_order(
+                            api=api_follower[follower],
+                            data=message_data
                         )
                     except Exception as e:
-                        error = f'Order from {ws_leader} could not be created for follower {follower}'
+                        error = f'Order on market {message_data["market"]} ' \
+                                f'{message_data["size"]}@{message_data["price"] if message_data["price"] is not None else "Market"} ' \
+                                f'from {ws_leader} could not be created for follower {follower}'
                         if len(e.args) > 0:
-                            error += f'because of:'
+                            error += f' because of:'
                             for arg in e.args:
                                 error += f' {arg}'
                         logger.error(error)
@@ -121,9 +132,7 @@ def main():
             continue
         api_follower[follower] = FtxClient(api_key=FOLLOWERS[follower]['API_KEY'],
                                            api_secret=FOLLOWERS[follower]['API_SECRET'],
-                                           subaccount_name=FOLLOWERS[follower]['SUBACCOUNT'] if 'SUBACCOUNT' in
-                                                                                                FOLLOWERS[
-                                                                                                    follower] else None)
+                                           subaccount_name=FOLLOWERS[follower]['SUBACCOUNT'] if 'SUBACCOUNT' in FOLLOWERS[follower] else None)
 
     # Initialise websockets and api endpoints for leaders
     for leader in LEADERS:
@@ -138,18 +147,37 @@ def main():
         ws[leader] = FtxWebsocketClient(api_key=api_key,
                                         api_secret=api_secret,
                                         on_message_callback=onMessage,
-                                        subaccount=LEADERS[leader]['SUBACCOUNT'] if 'SUBACCOUNT' in LEADERS[
-                                            leader] else None)
+                                        subaccount=LEADERS[leader]['SUBACCOUNT'] if 'SUBACCOUNT' in LEADERS[leader] else None)
         ws[leader].connect()
 
         api_leader[leader] = FtxClient(api_key=LEADERS[leader]['API_KEY'],
                                        api_secret=LEADERS[leader]['API_SECRET'],
-                                       subaccount_name=LEADERS[leader]['SUBACCOUNT'] if 'SUBACCOUNT' in LEADERS[
-                                           leader] else None)
+                                       subaccount_name=LEADERS[leader]['SUBACCOUNT'] if 'SUBACCOUNT' in LEADERS[leader] else None)
 
-    # Subscribe websockets to order channel
+    # Subscribe websockets to order channel and
+    # synchronize orders between leaders and followers
     for leader in LEADERS:
         if leader in ws:
+            # Fetch leader orders and create map for clientIDs
+            open_orders_leader = api_leader[leader].get_open_orders()
+            open_orders_leader_clid = {order['clientId']: order for order in open_orders_leader}
+            # Go through each follower and see if everything is synced
+            for follower in leader_follower_map[leader]:
+                open_orders_follower = api_follower[follower].get_open_orders()
+                open_orders_follower_clid = {order['clientId']: order for order in open_orders_follower}
+                for order_leader_clid in open_orders_leader_clid:
+                    if order_leader_clid not in open_orders_follower_clid:
+                        order_data = open_orders_leader_clid[order_leader_clid]
+                        logger.info(f'New {order_data["type"]} order from {leader} on market {order_data["market"]}')
+                        order_data['size'] = percentage(
+                            quantity=order_data['size'],
+                            percentage=leader_follower_map[leader][follower]
+                        )
+                        ftx_place_order(
+                            api=api_follower[follower],
+                            data=order_data
+                        )
+
             ws[leader].get_orders()
 
     logger.info('Ftx Copy bot started')

@@ -2,10 +2,11 @@ import time
 import urllib.parse
 from typing import Optional, Dict, Any, List
 
+from ciso8601 import parse_datetime
 from requests import Request, Session, Response
 import hmac
-from ciso8601 import parse_datetime
-
+#from ciso8601 import parse_datetime
+from datetime import datetime
 
 class FtxClient:
     _ENDPOINT = 'https://ftx.com/api/'

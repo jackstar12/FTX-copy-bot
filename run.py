@@ -59,15 +59,15 @@ def main():
     api_follower = {}
 
     leader_follower_map: Dict[str, Dict] = {}
-    conditional_order_maps: Dict[str, Dict] = {}
+    orders_delivered: Dict[str, Dict] = {}
 
     for follower in FOLLOWERS:
         for leader in FOLLOWERS[follower]['FOLLOWS']:
-            if leader not in conditional_order_maps:
-                conditional_order_maps[leader] = {}
-                conditional_order_maps[leader][follower] = {}
+            if leader not in orders_delivered:
+                orders_delivered[leader] = {}
+                orders_delivered[leader][follower] = {}
             else:
-                conditional_order_maps[leader][follower] = {}
+                orders_delivered[leader][follower] = {}
             if leader not in leader_follower_map:
                 leader_follower_map[leader] = {}
                 leader_follower_map[leader][follower] = FOLLOWERS[follower]['FOLLOWS'][leader]
@@ -90,8 +90,9 @@ def main():
             # Go through each follower of the found leader and place the order
             for follower in leader_follower_map[ws_leader]:
                 clientID = message_data['clientId']
-                current_conditional_order_map = conditional_order_maps[ws_leader][follower]
-                if message_data['status'] == 'new' or message_data['type'] == 'market':
+                current_conditional_order_map = orders_delivered[ws_leader][follower]
+                if message_data['status'] == 'new' or message_data['type'] == 'market' or clientID not in orders_delivered[ws_leader][follower]:
+                    orders_delivered[ws_leader][follower] = clientID
                     logger.info(f'New {message_data["type"]} order from {ws_leader} on market {message_data["market"]}')
                     try:
                         message_data['size'] = percentage(
@@ -115,9 +116,10 @@ def main():
                         logger.error(error)
                         continue
                 elif message_data['status'] == 'closed':
-                    api_follower[follower].cancel_order_by_client_id(
-                        client_id=clientID
-                    )
+                    if not message_data['filledSize'] > 0:
+                        api_follower[follower].cancel_order_by_client_id(
+                            client_id=clientID
+                        )
 
     # Initialise api endpoints for followers
     for follower in FOLLOWERS:
